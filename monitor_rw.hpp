@@ -2,7 +2,9 @@
 #define MONITOR_RW_HPP
 
 #include <condition_variable>
+#include <deque>
 #include <mutex>
+#include <utility>
 #include <vector>
 #include "control_rw.hpp"
 #include "verificador.hpp"
@@ -30,15 +32,23 @@ public:
 private:
     Politica politica;
     bool registrar_traza;
-    std::mutex m;                        // mutex del monitor
-    std::vector<AnotacionTraza> traza;   // ver R6
+    std::mutex m;
+    std::vector<AnotacionTraza> traza;
 
-    // TODO: Definir variables de condición y estado de admisión privado
-    // Ejemplos de lo que podrían necesitar para R3, R4 y R5:
-    // - Contadores de lectoras activas / pendientes
-    // - Contadores o bandera de escritoras activas / pendientes
-    // - Contadores o cola de turnos para la política FIFO (R5)
-    // - std::condition_variable para bloquear/despertar lectoras y escritoras
+    // [A] Estado de las políticas Lectores y Escritores.
+    long lectoras_activas = 0;
+    bool escritora_activa = false;
+    long lectoras_pend = 0;
+    long escritoras_pend = 0;
+
+    std::condition_variable cv_lectoras;
+    std::condition_variable cv_escritoras;
+
+    // [B] Estado de la política FIFO.
+    enum class TipoEspera { Lectora, Escritora };
+    long turno_sig = 0;
+    long turno_atendido = 0;
+    std::deque<std::pair<long, TipoEspera>> cola_fifo;
 };
 
 #endif // MONITOR_RW_HPP
