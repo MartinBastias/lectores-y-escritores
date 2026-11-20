@@ -1,57 +1,138 @@
 #include "monitor_rw.hpp"
 
 MonitorRW::MonitorRW(Politica p, bool registrar_traza)
-    : politica(p), registrar_traza(registrar_traza) {
-    // TODO: Inicializar estado de admisión si corresponde
-}
+    : politica(p), registrar_traza(registrar_traza) {}
 
 void MonitorRW::entrar_lectura() {
     std::unique_lock<std::mutex> lock(m);
 
-    // TODO (R6): Si `registrar_traza` está activo, registrar anotación Accion::Pide
-    // antes de esperar en una variable de condición (asignar turno si politica == Politica::Fifo, o -1).
-    (void)politica;
-    (void)registrar_traza;
+    long turno = -1;
+    if (politica == Politica::Fifo) {
+        turno = siguiente_turno++;
+        cola_fifo.push_back({turno, TipoEspera::Lectora});
+    }
 
-    // TODO (R3, R4, R5, R7): Esperar con while + wait(lock) según la política:
-    // - Politica::Lectores (R3): esperar solo si hay escritora activa.
-    // - Politica::Escritores (R4): esperar si hay escritora activa o escritoras esperando.
-    // - Politica::Fifo (R5): respetar orden de turnos (admitiendo lectoras consecutivas
-    //   mientras no haya escritora con turno anterior pendiente ni activa).
+    lectores_pendientes++;
+    if (registrar_traza)
+        traza.push_back({id_hebra, Tipo::Lectora, Accion::Pide, turno});
 
-    // TODO (R6): Si `registrar_traza` está activo, registrar anotación Accion::Entra
-    // justo antes de retornar.
+    switch (politica) {
+    case Politica::Lectores:
+        while (escritoras_activas > 0)
+            cv_lectores.wait(lock);
+        break;
+    case Politica::Escritores:
+        while (escritoras_activas > 0 || escritoras_pendientes > 0)
+            cv_lectores.wait(lock);
+        break;
+    case Politica::Fifo:
+        while (escritoras_activas > 0 || cola_fifo.empty() ||
+               cola_fifo.front().first != turno ||
+               cola_fifo.front().second != TipoEspera::Lectora)
+            cv_lectores.wait(lock);
+        cola_fifo.pop_front();
+        if (!cola_fifo.empty() && cola_fifo.front().second == TipoEspera::Lectora)
+            cv_lectores.notify_all();
+        break;
+    }
+
+    lectores_pendientes--;
+    lectores_activos++;
+
+    if (registrar_traza)
+        traza.push_back({id_hebra, Tipo::Lectora, Accion::Entra, turno});
 }
 
 void MonitorRW::salir_lectura() {
     std::unique_lock<std::mutex> lock(m);
 
-    // TODO: Actualizar estado de admisión al salir una lectora
-    // TODO (R6): Si `registrar_traza` está activo, registrar anotación Accion::Sale
-    // TODO (R7): Notificar a las hebras habilitadas según la política
+    lectores_activos--;
+    if (registrar_traza)
+        traza.push_back({id_hebra, Tipo::Lectora, Accion::Sale, -1});
+
+    if (politica == Politica::Lectores) {
+        if (lectores_activos == 0)
+            cv_escritoras.notify_one();
+    } else if (politica == Politica::Escritores) {
+        if (lectores_activos == 0 && escritoras_pendientes > 0)
+            cv_escritoras.notify_one();
+    } else if (politica == Politica::Fifo) {
+        if (lectores_activos == 0 && !cola_fifo.empty()) {
+            if (cola_fifo.front().second == TipoEspera::Escritora)
+                cv_escritoras.notify_one();
+            else
+                cv_lectores.notify_all();
+        }
+    }
 }
 
 void MonitorRW::entrar_escritura() {
     std::unique_lock<std::mutex> lock(m);
 
-    // TODO (R6): Si `registrar_traza` está activo, registrar anotación Accion::Pide
-    // antes de esperar en una variable de condición (asignar turno si politica == Politica::Fifo, o -1).
+    long turno = -1;
+    if (politica == Politica::Fifo) {
+        turno = siguiente_turno++;
+        cola_fifo.push_back({turno, TipoEspera::Escritora});
+    }
 
-    // TODO (R3, R4, R5, R7): Esperar con while + wait(lock) según la política:
-    // - Politica::Lectores (R3): esperar si hay lectoras activas, escritora activa o lectoras pendientes.
-    // - Politica::Escritores (R4): esperar si hay lectoras activas o escritora activa.
-    // - Politica::Fifo (R5): esperar turno correspondiente y ausencia de lectoras/escritora activas.
+    escritoras_pendientes++;
+    if (registrar_traza)
+        traza.push_back({id_hebra, Tipo::Escritora, Accion::Pide, turno});
 
-    // TODO (R6): Si `registrar_traza` está activo, registrar anotación Accion::Entra
-    // justo antes de retornar.
+    switch (politica) {
+    case Politica::Lectores:
+        while (escritoras_activas > 0 || lectores_activos > 0 || lectores_pendientes > 0)
+            cv_escritoras.wait(lock);
+        break;
+    case Politica::Escritores:
+        while (escritoras_activas > 0 || lectores_activos > 0)
+            cv_escritoras.wait(lock);
+        break;
+    case Politica::Fifo:
+        while (escritoras_activas > 0 || lectores_activos > 0 ||
+               cola_fifo.empty() || cola_fifo.front().first != turno ||
+               cola_fifo.front().second != TipoEspera::Escritora)
+            cv_escritoras.wait(lock);
+        cola_fifo.pop_front();
+        break;
+    }
+
+    escritoras_pendientes--;
+    escritoras_activas = 1;
+
+    if (registrar_traza)
+        traza.push_back({id_hebra, Tipo::Escritora, Accion::Entra, turno});
 }
 
 void MonitorRW::salir_escritura() {
     std::unique_lock<std::mutex> lock(m);
 
-    // TODO: Actualizar estado de admisión al salir una escritora
-    // TODO (R6): Si `registrar_traza` está activo, registrar anotación Accion::Sale
-    // TODO (R7): Notificar a las hebras habilitadas según la política
+    escritoras_activas = 0;
+    if (registrar_traza)
+        traza.push_back({id_hebra, Tipo::Escritora, Accion::Sale, -1});
+
+    switch (politica) {
+    case Politica::Lectores:
+        if (lectores_pendientes > 0)
+            cv_lectores.notify_all();
+        else
+            cv_escritoras.notify_one();
+        break;
+    case Politica::Escritores:
+        if (escritoras_pendientes > 0)
+            cv_escritoras.notify_one();
+        else
+            cv_lectores.notify_all();
+        break;
+    case Politica::Fifo:
+        if (!cola_fifo.empty()) {
+            if (cola_fifo.front().second == TipoEspera::Lectora)
+                cv_lectores.notify_all();
+            else
+                cv_escritoras.notify_one();
+        }
+        break;
+    }
 }
 
 std::vector<AnotacionTraza> MonitorRW::obtener_traza() {

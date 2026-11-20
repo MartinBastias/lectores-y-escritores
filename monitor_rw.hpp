@@ -1,8 +1,11 @@
 #ifndef MONITOR_RW_HPP
 #define MONITOR_RW_HPP
 
+#include <cstddef>
+#include <deque>
 #include <condition_variable>
 #include <mutex>
+#include <utility>
 #include <vector>
 #include "control_rw.hpp"
 #include "verificador.hpp"
@@ -33,12 +36,19 @@ private:
     std::mutex m;                        // mutex del monitor
     std::vector<AnotacionTraza> traza;   // ver R6
 
-    // TODO: Definir variables de condición y estado de admisión privado
-    // Ejemplos de lo que podrían necesitar para R3, R4 y R5:
-    // - Contadores de lectoras activas / pendientes
-    // - Contadores o bandera de escritoras activas / pendientes
-    // - Contadores o cola de turnos para la política FIFO (R5)
-    // - std::condition_variable para bloquear/despertar lectoras y escritoras
+    // Variables de condición y estado de admisión privado
+    std::size_t lectores_activos = 0;
+    std::size_t lectores_pendientes = 0;
+    std::size_t escritoras_activas = 0;
+    std::size_t escritoras_pendientes = 0;
+
+    // FIFO: cola de tipos y turno numérico. El turno asignado empieza en 0.
+    enum class TipoEspera { Lectora, Escritora };
+    std::deque<std::pair<long, TipoEspera>> cola_fifo;
+    long siguiente_turno = 0;
+
+    std::condition_variable cv_lectores;
+    std::condition_variable cv_escritoras;
 };
 
 #endif // MONITOR_RW_HPP
