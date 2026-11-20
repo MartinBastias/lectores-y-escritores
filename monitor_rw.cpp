@@ -8,36 +8,37 @@ void MonitorRW::entrar_lectura() {
 
     long turno = -1;
     if (politica == Politica::Fifo) {
-        turno = siguiente_turno++;
+        turno = turno_sig++;
         cola_fifo.push_back({turno, TipoEspera::Lectora});
     }
 
-    lectores_pendientes++;
+    lectoras_pend++;
     if (registrar_traza)
         traza.push_back({id_hebra, Tipo::Lectora, Accion::Pide, turno});
 
     switch (politica) {
     case Politica::Lectores:
-        while (escritoras_activas > 0)
-            cv_lectores.wait(lock);
+        while (escritora_activa)
+            cv_lectoras.wait(lock);
         break;
     case Politica::Escritores:
-        while (escritoras_activas > 0 || escritoras_pendientes > 0)
-            cv_lectores.wait(lock);
+        while (escritora_activa || escritoras_pend > 0)
+            cv_lectoras.wait(lock);
         break;
     case Politica::Fifo:
-        while (escritoras_activas > 0 || cola_fifo.empty() ||
+        while (escritora_activa || cola_fifo.empty() ||
                cola_fifo.front().first != turno ||
                cola_fifo.front().second != TipoEspera::Lectora)
-            cv_lectores.wait(lock);
+            cv_lectoras.wait(lock);
         cola_fifo.pop_front();
+        turno_atendido = turno;
         if (!cola_fifo.empty() && cola_fifo.front().second == TipoEspera::Lectora)
-            cv_lectores.notify_all();
+            cv_lectoras.notify_all();
         break;
     }
 
-    lectores_pendientes--;
-    lectores_activos++;
+    lectoras_pend--;
+    lectoras_activas++;
 
     if (registrar_traza)
         traza.push_back({id_hebra, Tipo::Lectora, Accion::Entra, turno});
@@ -46,23 +47,27 @@ void MonitorRW::entrar_lectura() {
 void MonitorRW::salir_lectura() {
     std::unique_lock<std::mutex> lock(m);
 
-    lectores_activos--;
+    lectoras_activas--;
     if (registrar_traza)
         traza.push_back({id_hebra, Tipo::Lectora, Accion::Sale, -1});
 
-    if (politica == Politica::Lectores) {
-        if (lectores_activos == 0)
+    switch (politica) {
+    case Politica::Lectores:
+        if (lectoras_activas == 0)
             cv_escritoras.notify_one();
-    } else if (politica == Politica::Escritores) {
-        if (lectores_activos == 0 && escritoras_pendientes > 0)
+        break;
+    case Politica::Escritores:
+        if (lectoras_activas == 0 && escritoras_pend > 0)
             cv_escritoras.notify_one();
-    } else if (politica == Politica::Fifo) {
-        if (lectores_activos == 0 && !cola_fifo.empty()) {
+        break;
+    case Politica::Fifo:
+        if (lectoras_activas == 0 && !cola_fifo.empty()) {
             if (cola_fifo.front().second == TipoEspera::Escritora)
                 cv_escritoras.notify_one();
             else
-                cv_lectores.notify_all();
+                cv_lectoras.notify_all();
         }
+        break;
     }
 }
 
@@ -71,34 +76,35 @@ void MonitorRW::entrar_escritura() {
 
     long turno = -1;
     if (politica == Politica::Fifo) {
-        turno = siguiente_turno++;
+        turno = turno_sig++;
         cola_fifo.push_back({turno, TipoEspera::Escritora});
     }
 
-    escritoras_pendientes++;
+    escritoras_pend++;
     if (registrar_traza)
         traza.push_back({id_hebra, Tipo::Escritora, Accion::Pide, turno});
 
     switch (politica) {
     case Politica::Lectores:
-        while (escritoras_activas > 0 || lectores_activos > 0 || lectores_pendientes > 0)
+        while (escritora_activa || lectoras_activas > 0 || lectoras_pend > 0)
             cv_escritoras.wait(lock);
         break;
     case Politica::Escritores:
-        while (escritoras_activas > 0 || lectores_activos > 0)
+        while (escritora_activa || lectoras_activas > 0)
             cv_escritoras.wait(lock);
         break;
     case Politica::Fifo:
-        while (escritoras_activas > 0 || lectores_activos > 0 ||
-               cola_fifo.empty() || cola_fifo.front().first != turno ||
+        while (escritora_activa || lectoras_activas > 0 || cola_fifo.empty() ||
+               cola_fifo.front().first != turno ||
                cola_fifo.front().second != TipoEspera::Escritora)
             cv_escritoras.wait(lock);
         cola_fifo.pop_front();
+        turno_atendido = turno;
         break;
     }
 
-    escritoras_pendientes--;
-    escritoras_activas = 1;
+    escritoras_pend--;
+    escritora_activa = true;
 
     if (registrar_traza)
         traza.push_back({id_hebra, Tipo::Escritora, Accion::Entra, turno});
@@ -107,27 +113,27 @@ void MonitorRW::entrar_escritura() {
 void MonitorRW::salir_escritura() {
     std::unique_lock<std::mutex> lock(m);
 
-    escritoras_activas = 0;
+    escritora_activa = false;
     if (registrar_traza)
         traza.push_back({id_hebra, Tipo::Escritora, Accion::Sale, -1});
 
     switch (politica) {
     case Politica::Lectores:
-        if (lectores_pendientes > 0)
-            cv_lectores.notify_all();
+        if (lectoras_pend > 0)
+            cv_lectoras.notify_all();
         else
             cv_escritoras.notify_one();
         break;
     case Politica::Escritores:
-        if (escritoras_pendientes > 0)
+        if (escritoras_pend > 0)
             cv_escritoras.notify_one();
         else
-            cv_lectores.notify_all();
+            cv_lectoras.notify_all();
         break;
     case Politica::Fifo:
         if (!cola_fifo.empty()) {
             if (cola_fifo.front().second == TipoEspera::Lectora)
-                cv_lectores.notify_all();
+                cv_lectoras.notify_all();
             else
                 cv_escritoras.notify_one();
         }

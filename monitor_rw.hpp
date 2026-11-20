@@ -1,9 +1,8 @@
 #ifndef MONITOR_RW_HPP
 #define MONITOR_RW_HPP
 
-#include <cstddef>
-#include <deque>
 #include <condition_variable>
+#include <deque>
 #include <mutex>
 #include <utility>
 #include <vector>
@@ -33,22 +32,23 @@ public:
 private:
     Politica politica;
     bool registrar_traza;
-    std::mutex m;                        // mutex del monitor
-    std::vector<AnotacionTraza> traza;   // ver R6
+    std::mutex m;
+    std::vector<AnotacionTraza> traza;
 
-    // Variables de condición y estado de admisión privado
-    std::size_t lectores_activos = 0;
-    std::size_t lectores_pendientes = 0;
-    std::size_t escritoras_activas = 0;
-    std::size_t escritoras_pendientes = 0;
+    // [A] Estado de las políticas Lectores y Escritores.
+    long lectoras_activas = 0;
+    bool escritora_activa = false;
+    long lectoras_pend = 0;
+    long escritoras_pend = 0;
 
-    // FIFO: cola de tipos y turno numérico. El turno asignado empieza en 0.
-    enum class TipoEspera { Lectora, Escritora };
-    std::deque<std::pair<long, TipoEspera>> cola_fifo;
-    long siguiente_turno = 0;
-
-    std::condition_variable cv_lectores;
+    std::condition_variable cv_lectoras;
     std::condition_variable cv_escritoras;
+
+    // [B] Estado de la política FIFO.
+    enum class TipoEspera { Lectora, Escritora };
+    long turno_sig = 0;
+    long turno_atendido = 0;
+    std::deque<std::pair<long, TipoEspera>> cola_fifo;
 };
 
 #endif // MONITOR_RW_HPP
