@@ -1,6 +1,7 @@
 #ifndef VERIFICADOR_HPP
 #define VERIFICADOR_HPP
 
+#include <string>
 #include <vector>
 #include "control_rw.hpp"
 
@@ -32,6 +33,7 @@ struct ResultadoVerificacion {
     bool politica_ok = true;
     long evidencia = 0;           // Indicador de evidencia según la política
     long indice_violacion = -1;   // Índice de la anotación donde falló (-1 si no hay fallo)
+    std::string regla;            // Regla incumplida en la primera violación
 };
 
 /**
@@ -40,5 +42,8 @@ struct ResultadoVerificacion {
  * y calcula el indicador de evidencia.
  */
 ResultadoVerificacion verificar_traza(const std::vector<AnotacionTraza>& traza, Politica politica);
+
+/** Nombre del indicador de evidencia de cada política. */
+const char* nombre_evidencia(Politica politica);
 
 #endif // VERIFICADOR_HPP
