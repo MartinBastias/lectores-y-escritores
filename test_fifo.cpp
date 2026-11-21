@@ -10,6 +10,8 @@
 // para correr el test pone: g++ -std=c++17 -O2 -Wall -Wextra -pthread test_fifo.cpp monitor_rw.cpp verificador.cpp -o test_fifo
 // luego ejecuta con ./test_fifo (nombre), en 'nombre' puedes colocar la politica que quieras usar, como lectores, escritores o fifo
 
+
+
 thread_local int id_hebra = -1;   // provisorio: en el programa final lo define rw.cpp
 
 static void pausa_us(long us) {
@@ -64,8 +66,8 @@ int main(int argc, char* argv[]) {
     };
 
     std::vector<std::thread> hs;
-    for (int i = 0; i < L; ++i) hs.emplace_back(lectora, i);          // ids 0..L-1
-    for (int j = 0; j < E; ++j) hs.emplace_back(escritora, L + j);    // ids L..L+E-1
+    for (int i = 0; i < L; ++i) hs.emplace_back(lectora, i);
+    for (int j = 0; j < E; ++j) hs.emplace_back(escritora, L + j);
     for (auto& h : hs) h.join();
 
     auto traza = mon.obtener_traza();
@@ -78,7 +80,7 @@ int main(int argc, char* argv[]) {
               << "politica_ok=" << (r.politica_ok ? "SI" : "NO") << "\n"
               << nombre_evidencia(pol) << "=" << r.evidencia << "\n\n";
 
-    // Fragmento de traza para el anexo (primeras 40 anotaciones)
+    // fragmento de traza para el anexo (primeras 40 anotaciones)
     const char* acc[] = {"Pide ", "Entra", "Sale "};
     for (size_t i = 0; i < traza.size() && i < 50; ++i) {   // aca puedes cambiar el numero 40 a otro valor para ver la cantidad de turnos mostrados
         const auto& a = traza[i];
