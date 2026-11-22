@@ -4,33 +4,57 @@
 thread_local ContadoresAtomicos contadores_atomicos_hebra;
 
 void ControlAtomicoRW::entrar_lectura() {
-    // TODO (R9, R10):
-    // - Leer `estado` con load()
-    // - Comprobar que no haya escritora activa ni escritoras esperando:
-    //   * Si hay escritora activa -> contadores_atomicos_hebra.recurso_ocupado++
-    //   * Si no, pero hay escritoras esperando -> contadores_atomicos_hebra.escritoras_esperando++
-    // - Si puede ingresar, intentar incrementar lectoras activas mediante CAS
-    //   (compare_exchange_weak o compare_exchange_strong).
-    //   * Si el CAS falla -> contadores_atomicos_hebra.cas_fallido++
-    // - Reintentar activamente (opcionalmente con std::this_thread::yield()).
-    (void)estado;
+    std::uint64_t actual = estado.load(std::memory_order_relaxed);
+    while (true) {
+        if (hay_escritora_activa(actual)) {
+            contadores_atomicos_hebra.recurso_ocupado++;
+            std::this_thread::yield();
+            actual = estado.load(std::memory_order_relaxed);
+            continue;
+        }
+        if (escritoras_esperando(actual) > 0) {
+            contadores_atomicos_hebra.escritoras_esperando++;
+            std::this_thread::yield();
+            actual = estado.load(std::memory_order_relaxed);
+            continue;
+        }
+        const std::uint64_t nuevo = actual + UNIDAD_LECTORA;
+        if (estado.compare_exchange_weak(actual, nuevo,
+                                         std::memory_order_acq_rel,
+                                         std::memory_order_relaxed)) {
+            return;
+        }
+        contadores_atomicos_hebra.cas_fallido++;
+    }
 }
 
 void ControlAtomicoRW::salir_lectura() {
-    // TODO (R9): Decrementar el número de lectoras activas en `estado` de forma atómica.
+    estado.fetch_sub(UNIDAD_LECTORA, std::memory_order_acq_rel);
 }
 
 void ControlAtomicoRW::entrar_escritura() {
-    // TODO (R9, R10):
-    // - Registrar la escritora como esperando antes de reintentar su admisión,
-    //   para bloquear el ingreso de nuevas lectoras.
-    // - Mientras haya escritora activa o lectoras activas:
-    //   * contadores_atomicos_hebra.recurso_ocupado++
-    // - Cuando el recurso esté libre, intentar mediante un mismo CAS descontarla
-    //   de las esperando y marcarla como escritora activa.
-    //   * Si el CAS falla -> contadores_atomicos_hebra.cas_fallido++
+    std::uint64_t actual =
+        estado.fetch_add(UNIDAD_ESCRITORA_ESP, std::memory_order_acq_rel) +
+        UNIDAD_ESCRITORA_ESP;
+
+    while (true) {
+        if (hay_escritora_activa(actual) || lectoras_activas(actual) > 0) {
+            contadores_atomicos_hebra.recurso_ocupado++;
+            std::this_thread::yield();
+            actual = estado.load(std::memory_order_relaxed);
+            continue;
+        }
+        const std::uint64_t nuevo =
+            (actual - UNIDAD_ESCRITORA_ESP) | BIT_ESCRITORA_ACTIVA;
+        if (estado.compare_exchange_weak(actual, nuevo,
+                                         std::memory_order_acq_rel,
+                                         std::memory_order_relaxed)) {
+            return;
+        }
+        contadores_atomicos_hebra.cas_fallido++;
+    }
 }
 
 void ControlAtomicoRW::salir_escritura() {
-    // TODO (R9): Desmarcar la escritora activa en `estado` de forma atómica.
+    estado.fetch_and(~BIT_ESCRITORA_ACTIVA, std::memory_order_acq_rel);
 }
