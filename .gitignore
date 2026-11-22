@@ -39,6 +39,8 @@
 *.app
 rw
 rw_tsan
+*_tsan
+test_fifo
 
 # Build directories
 build/
@@ -67,3 +69,6 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+# IDE / Editor
+.vscode/
