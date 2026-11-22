@@ -42,11 +42,40 @@ private:
     // R9: Comprobar que la palabra de 64 bits no usa un candado interno
     static_assert(std::atomic<std::uint64_t>::is_always_lock_free);
 
-    // TODO (R9): Definir máscaras y desplazamientos de bits para empaquetar en `estado`:
-    // - Número de lectoras activas
-    // - Si hay una escritora activa
-    // - Número de escritoras esperando
-    // Justificar que ningún campo se desborda con L + E <= 1000.
+    // R9: Formato de bits de `estado` (64 bits):
+    // - Bits  0..30 (31 bits): número de lectoras activas    (máx. 2^31 - 1 = 2.147.483.647)
+    // - Bit  31     ( 1 bit ): bandera de escritora activa   (0 o 1)
+    // - Bits 32..63 (32 bits): número de escritoras esperando (máx. 2^32 - 1 = 4.294.967.295)
+    //
+    // Con L + E <= 1000, tanto las lectoras activas (< 1000) como las escritoras esperando
+    // (< 1000) caben holgadamente sin desbordar ni invadir campos adyacentes.
+    static constexpr unsigned SHIFT_LECTORAS         = 0;
+    static constexpr unsigned BITS_LECTORAS          = 31;
+    static constexpr unsigned SHIFT_ESCRITORA_ACTIVA = 31;
+    static constexpr unsigned SHIFT_ESCRITORAS_ESP   = 32;
+
+    static constexpr std::uint64_t UNIDAD_LECTORA       = std::uint64_t{1} << SHIFT_LECTORAS;
+    static constexpr std::uint64_t MASK_LECTORAS        = (std::uint64_t{1} << BITS_LECTORAS) - 1;
+    static constexpr std::uint64_t BIT_ESCRITORA_ACTIVA = std::uint64_t{1} << SHIFT_ESCRITORA_ACTIVA;
+    static constexpr std::uint64_t UNIDAD_ESCRITORA_ESP = std::uint64_t{1} << SHIFT_ESCRITORAS_ESP;
+
+    static_assert((MASK_LECTORAS & BIT_ESCRITORA_ACTIVA) == 0);
+    static_assert(((MASK_LECTORAS | BIT_ESCRITORA_ACTIVA) & ~(UNIDAD_ESCRITORA_ESP - 1)) == 0);
+    static_assert(MASK_LECTORAS >= 1000);
+    static_assert((~std::uint64_t{0} >> SHIFT_ESCRITORAS_ESP) >= 1000);
+
+    static constexpr std::uint64_t lectoras_activas(std::uint64_t s) noexcept {
+        return s & MASK_LECTORAS;
+    }
+
+    static constexpr bool hay_escritora_activa(std::uint64_t s) noexcept {
+        return (s & BIT_ESCRITORA_ACTIVA) != 0;
+    }
+
+    static constexpr std::uint64_t escritoras_esperando(std::uint64_t s) noexcept {
+        return s >> SHIFT_ESCRITORAS_ESP;
+    }
+
     std::atomic<std::uint64_t> estado{0};
 };
 
